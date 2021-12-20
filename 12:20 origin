@@ -1,0 +1,227 @@
+#include <iostream>
+#include <vector>
+#include <numeric>      // std::iota
+#include <algorithm>    // std::sort, std::stable_sort
+#include<windows.h>
+#include<stdio.h>
+#include <opencv2/core.hpp>
+#include <opencv2/core/utility.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/video.hpp>
+#include <opencv2/video/tracking.hpp>
+#include"math.h"
+#include<cmath>
+#include <opencv2/video/background_segm.hpp>
+#ifdef _DEBUG
+#pragma comment(lib, "opencv_world452d.lib")
+#else
+#pragma comment(lib, "opencv_world452.lib")
+#endif
+
+using namespace cv;
+using namespace std;
+
+FILE* fp;//ファイルポインタ宣言
+FILE* fp0;
+
+int xb = 0, yb = 0;
+
+char FileName[127] = { "FILE_AD" };//ファイルの名前用の文字列
+
+cv::Mat templateMatch(cv::Mat src, cv::Mat tmp, cv::Mat frame) {
+    
+    int count=0;
+    int sumx = 0, sumy = 0;
+    const int __TARGET_NUM__ = 30;
+    cv::Mat output, dst;
+    //dst = src.clone();
+    dst = frame.clone();
+    //テンプレートマッチング
+    cv::matchTemplate(src, tmp, output, cv::TM_CCOEFF);
+    //0~1の値に標準化
+    cv::normalize(output, output, 0, 1, cv::NORM_MINMAX, -1, cv::Mat());
+    //2次元から1次元へ変換
+    cv::Mat one_row = output.reshape(1, 1);
+
+    std::vector<float> one_row_vec;
+    std::vector<float> one_row_index;
+
+    //cv::Mat -> std::vector に変換
+    one_row_vec.assign(one_row.begin<float>(), one_row.end<float>());
+    std::vector<int> index(one_row_vec.size());
+
+    //ソートインデックス配列用に整数列を作成する(0,1,2,3,4,5......)
+    std::iota(index.begin(), index.end(), 0);
+
+    //ソートをかける
+    std::sort(index.begin(), index.end(), [&](int a, int b) {return one_row_vec[a] > one_row_vec[b]; });
+    
+    for (int i = 0; i < __TARGET_NUM__; i++) {
+        //std::cout << index[i] << ":" << one_row_vec[index[i]] << std::endl;
+        if (one_row_vec[index[i]] > 0.999) {
+            count++;
+            // 1次元から2次元に変換 
+            int x = index[i] % output.cols;
+            int y = index[i] / output.cols;
+            
+            sumx += x;
+            sumy += y;
+            if (abs(x - xb) < 10 || abs(y - yb) < 10) {
+            //if (count % 10 == 0) {
+               // x = sumx / 10;
+              //  y = sumy / 10;
+               // sumx = 0;
+               // sumy = 0;
+                //std::cout << /*"(" <<*/ x << "," << y /* << ")" */ << std::endl;
+                //std::cout << "-----------------" << std::endl;
+                
+               // fprintf(fp, "%d,%d\n", x, y);
+            //}
+            
+            cv::Rect roi_rect = cv::Rect(x, y, tmp.cols, tmp.rows);
+            cv::rectangle(dst, roi_rect, cv::Scalar(0, 255, 255), 3);
+            }
+                xb = x;
+                yb = y;
+        }
+    }
+
+    return dst;
+}
+
+Mat Elimination(Mat frame_gry, Mat frame2) {
+    Mat binaryframe;
+    const double maxValue = 255.0;
+    Mat kernel2 = getStructuringElement(cv::MORPH_RECT, cv::Size(9, 9));
+    Mat black(Scalar::all(0));
+    adaptiveThreshold(frame_gry, binaryframe, maxValue, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY, (5, 5), 3);
+    for (int i = 0; i < 8; i++) {
+        //erode(binaryImage, binaryImage, kernel);
+        //dilate(binaryImage, binaryImage, kernel);
+        morphologyEx(binaryframe, binaryframe, MORPH_OPEN, kernel2);
+        medianBlur(binaryframe, binaryframe, 11);
+    }
+
+    bitwise_and(black, frame2, frame2, binaryframe);
+
+    return frame2;
+}
+
+int main(int argc, const char* argv[]) {
+    VideoCapture capture(0);
+    //VideoCapture capture("WIN_20211202_12_01_48_Pro.mp4");
+    if (!capture.isOpened()) {
+        //error in opening the video input
+        cerr << "Unable to open file!" << endl;
+        return 0;
+    }
+    int c = 0;
+    /*
+    errno_t error;
+    errno_t error1;
+    SYSTEMTIME systime;//時間記録用
+    GetLocalTime(&systime);
+    sprintf_s(FileName, "%d_%d_%dh%dm%d.csv", systime.wMonth, systime.wDay, systime.wHour, systime.wMinute, systime.wSecond);
+    error = fopen_s(&fp, FileName, "w+");//ファイル書き込み呼び出し
+    error1 = fopen_s(&fp0, FileName, "w+");//ファイル書き込み呼び出し
+    */
+
+    int vmin = 10, vmax = 256, smin = 30;
+    // ヒストグラム
+    cv::Mat hist;
+    cv::Mat histimg = cv::Mat::zeros(200, 320, CV_8UC3);
+    cv::Rect trackWindow;
+    int hsize = 16;
+    float hranges[] = { 0, 180 };
+    const float* phranges = hranges;
+
+    cv::Mat src;
+    Mat frame1, frame2;
+    Mat frame1_gry, frame2_gry,frame_gry;
+    Mat binaryframe;
+    
+    capture >> src;
+
+    // HSVに変換
+    cv::Mat hsv;
+    cv::cvtColor(src, hsv, cv::COLOR_BGR2HSV);
+
+    cv::Mat mask;
+    cv::Scalar lower(0, smin, MIN(vmin, vmax));
+    cv::Scalar upper(180, 256, MAX(vmin, vmax));
+    cv::inRange(hsv, lower, upper, mask);
+
+    // Hueだけ抽出
+    int ch[] = { 0, 0 };
+    cv::Mat hue(hsv.size(), hsv.depth());
+    mixChannels(&hsv, 1, &hue, 1, ch, 1);
+
+
+    //テンプレート画像
+    Rect roi;
+    roi = selectROI("tracker", src);
+    if (roi.width == 0 || roi.height == 0) {
+        return 0;
+    }
+    Mat tmp = src(roi);
+    
+    Mat tmp_gry, binarytmp;
+    cvtColor(tmp, tmp_gry, COLOR_BGR2GRAY);
+    medianBlur(tmp_gry, tmp_gry, 7);
+    const double threshold = 100.0;
+    const double maxValue = 255.0;
+    adaptiveThreshold(tmp_gry, binarytmp, maxValue, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY, (3, 3), 3);
+    Mat kernel1 = getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+    for (int i = 0; i < 2; i++) {
+        //erode(binaryImage, binaryImage, kernel);
+        //dilate(binaryImage, binaryImage, kernel);
+        morphologyEx(binarytmp, binarytmp, MORPH_OPEN, kernel1);
+        medianBlur(binarytmp, binarytmp, 3);
+    }
+    Mat black(Scalar::all(0));
+    bitwise_and(black, tmp, tmp, binarytmp);
+    /*
+    // ヒストグラムを計算
+    cv::Mat roi1(hue, roi), maskroi1(mask, roi);
+    cv::calcHist(&roi1, 1, 0, maskroi1, hist, 1, &hsize, &phranges);
+    cv::normalize(hist, hist, 0, 255, cv::NORM_MINMAX);
+
+    // 表示用にRGBに変換
+    histimg = cv::Scalar::all(0);
+    int binW = histimg.cols / hsize;
+    cv::Mat buf(1, hsize, CV_8UC3);
+    for (int i = 0; i < hsize; i++) buf.at<cv::Vec3b>(i) = cv::Vec3b(cv::saturate_cast<uchar>(i * 180. / hsize), 255, 255);
+    cv::cvtColor(buf, buf, cv::COLOR_HSV2BGR);
+
+    // ヒストグラムを描画
+    for (int i = 0; i < hsize; i++) {
+        int val = cv::saturate_cast<int>(hist.at<float>(i) * histimg.rows / 255);
+        cv::rectangle(histimg, cv::Point(i * binW, histimg.rows), cv::Point((i + 1) * binW, histimg.rows - val), cv::Scalar(buf.at<cv::Vec3b>(i)), -1, 8);
+    }
+    */
+    capture >> frame1;
+    cvtColor(frame1, frame1_gry, COLOR_BGR2GRAY);
+    medianBlur(frame1_gry, frame1_gry, 9);
+    for (;;) {
+        capture >> frame2;
+        
+        Mat frame3 = frame2.clone();
+        cvtColor(frame2, frame2_gry, COLOR_BGR2GRAY);
+        medianBlur(frame2_gry, frame2_gry, 9);
+        absdiff(frame1_gry, frame2_gry, frame_gry);
+        Elimination(frame_gry, frame2);
+        //cv::Mat dst = templateMatch(frame2, tmp);
+        cv::Mat dst = templateMatch(frame2, tmp,frame3);
+        //dst = templateMatch(dst, tmp);
+       
+        imshow("output.png", dst);
+        imshow("png", tmp);
+        //imshow("pngpng", binarytmp);
+        waitKey(1);
+        frame2_gry.copyTo(frame1_gry, frame2_gry);
+    }
+        return 0;
+}
