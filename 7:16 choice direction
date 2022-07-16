@@ -338,63 +338,6 @@ BOOL CALLBACK DlgWndProc(HWND hWnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
                 cserial->SendSerialData(1);
                 send_count = 0;
                 break;
-
-            case 10:
-                cserial->m_senddata[0] = (unsigned char)LEFTIN;
-                cserial->SerialPortBufferClear();
-                cserial->SendSerialData(1);
-                send_count = 0;
-                break;
-
-            case 11:
-                cserial->m_senddata[0] = (unsigned char)LEFTOUT;
-                cserial->SerialPortBufferClear();
-                cserial->SendSerialData(1);
-                send_count = 0;
-                break;
-
-            case 12:
-                cserial->m_senddata[0] = (unsigned char)RIGHTIN;
-                cserial->SerialPortBufferClear();
-                cserial->SendSerialData(1);
-                send_count = 0;
-                break;
-
-            case 13:
-                cserial->m_senddata[0] = (unsigned char)RIGHTOUT;
-                cserial->SerialPortBufferClear();
-                cserial->SendSerialData(1);
-                send_count = 0;
-                break;
-
-            case 14:
-                cserial->m_senddata[0] = (unsigned char)UPIN;
-                cserial->SerialPortBufferClear();
-                cserial->SendSerialData(1);
-                send_count = 0;
-                break;
-
-            case 15:
-                cserial->m_senddata[0] = (unsigned char)UPOUT;
-                cserial->SerialPortBufferClear();
-                cserial->SendSerialData(1);
-                send_count = 0;
-                break;
-
-            case 16:
-                cserial->m_senddata[0] = (unsigned char)DOWNIN;
-                cserial->SerialPortBufferClear();
-                cserial->SendSerialData(1);
-                send_count = 0;
-                break;
-
-            case 17:
-                cserial->m_senddata[0] = (unsigned char)DOWNOUT;
-                cserial->SerialPortBufferClear();
-                cserial->SendSerialData(1);
-                send_count = 0;
-                break;
-
             }
             return 1;
 
